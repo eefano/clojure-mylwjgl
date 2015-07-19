@@ -1,6 +1,5 @@
 (ns mylwjgl.core
-  (:import java.nio.ByteBuffer)
-  (:import java.nio.IntBuffer)
+  (:import org.lwjgl.BufferUtils)
   (:import org.lwjgl.glfw.GLFW)
   (:import org.lwjgl.glfw.GLFWWindowCloseCallback)
   (:import org.lwjgl.glfw.GLFWWindowSizeCallback)
@@ -41,7 +40,7 @@
    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL12/GL_TEXTURE_BASE_LEVEL 0)
    (GL11/glTexParameteri GL11/GL_TEXTURE_2D GL12/GL_TEXTURE_MAX_LEVEL 0)
    (GL11/glTexImage2D GL11/GL_TEXTURE_2D 0 GL11/GL_RGBA w h 0
-                       GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE 0)
+                       GL11/GL_RGBA GL11/GL_FLOAT 0)
     (println (str "glTexImage2D " (GL11/glGetError)))
     texture))
 
@@ -70,9 +69,11 @@
 	(GL11/glEnd))
 
 (defn runprogram
-  [program texture]
+  [program texture w h]
   (GL20/glUseProgram program)
   (GL20/glUniform1i (GL20/glGetUniformLocation program "tex") 0) 
+  (GL20/glUniform1f (GL20/glGetUniformLocation program "du") (/ 1.0 w))
+  (GL20/glUniform1f (GL20/glGetUniformLocation program "dv") (/ 1.0 h))
   (GL13/glActiveTexture GL13/GL_TEXTURE0)
   (blit texture)
   (GL20/glUseProgram 0)
@@ -84,7 +85,7 @@
   (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
   (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fb)
   (GL11/glViewport 0 0 w h)
-  (runprogram program texture)
+  (runprogram program texture w h)
   (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
   (GL11/glPopAttrib)
   )
@@ -104,11 +105,11 @@
                                  "gl_Position=ftransform();"
                                  "}"
                                  ]))
-(def rshader (into-array String [
+(def test2shader (into-array String [
                                  "uniform sampler2D tex;"
                                  "varying vec2 v_texCoord;"
                                  "void main() {"
-                                 "gl_FragColor = texture2D(tex, v_texCoord);"
+                                 "gl_FragColor = texture2D(tex, v_texCoord) - vec4(0.1,0.1,0.1,0.1);"
                                  "}"
                                  ]))
 
@@ -122,7 +123,7 @@
                                  ]))
 
 
-(def fshader (into-array String [
+(def rshader (into-array String [
                                  "uniform sampler2D tex;"
                                  "varying vec2 v_texCoord;"
                                  "void main() {"
@@ -130,12 +131,11 @@
                                  "}"
                                  ]))
 
-
 (defn reshade [window]
   (def rprogram (createprogram (createshader vshader GL20/GL_VERTEX_SHADER)
                                (createshader rshader GL20/GL_FRAGMENT_SHADER)))
   (def fprogram (createprogram (createshader vshader GL20/GL_VERTEX_SHADER)
-                               (createshader fshader GL20/GL_FRAGMENT_SHADER))))
+                               (createshader (slurp (clojure.java.io/resource "shader.frag")) GL20/GL_FRAGMENT_SHADER))))
 
 (defn prepare [window w h]
  	(GL11/glEnable GL11/GL_TEXTURE_2D)
@@ -146,8 +146,8 @@
   (def fb2 (createfb tex2)))
 
 
-(def mousec (ByteBuffer/allocateDirect 4))
-(.put (.asIntBuffer mousec) -1)
+(def mousec (BufferUtils/createFloatBuffer 4))
+
 
 (def windoww (atom 0))
 (def windowh (atom 0))
@@ -182,8 +182,13 @@
 
 
 (defn event-loop [window w h]
+  (.put mousec 0 1.0)
+  (.put mousec 1 1.0)
+  (.put mousec 2 1.0)
+  (.put mousec 3 1.0)
   (reset! windoww w)
   (reset! windowh h)
+  (reset! mousel false)
   (while (= (GLFW/glfwWindowShouldClose window) GL11/GL_FALSE)
     (do (GLFW/glfwPollEvents)
         (context window (fn [window]
@@ -195,11 +200,11 @@
                             (if @mousel
                               (let [x (quot (* (int @mousex) w) @windoww)
                                     y (- h (quot (* (int @mousey) h) @windowh) 1)]
-                                          (GL11/glBindTexture GL11/GL_TEXTURE_2D rtex)
-                                          (GL11/glTexSubImage2D GL11/GL_TEXTURE_2D 0
-                                                                x y 1 1
-                                                                GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE mousec)))
-                            (runprogram rprogram rtex))))
+                                (GL11/glBindTexture GL11/GL_TEXTURE_2D rtex)
+                                (GL11/glTexSubImage2D GL11/GL_TEXTURE_2D 0
+                                                      x y 1 1
+                                                      GL11/GL_RGBA GL11/GL_FLOAT mousec)))
+                            (runprogram rprogram rtex w h))))
         (GLFW/glfwSwapBuffers window)))
   (println "closing")
   (GLFW/glfwDestroyWindow window))
@@ -214,8 +219,8 @@
     (GLFW/glfwSetCursorPosCallback window cursor-callback)
     (GLFW/glfwSwapInterval 1)
     (context window (fn [window] (prepare window w h)))
-    (event-loop window w h)
-    ;(future (event-loop window w h))
+    ;(event-loop window w h)
+    (future (event-loop window w h))
     window))
 
 
