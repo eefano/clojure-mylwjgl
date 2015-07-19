@@ -51,7 +51,7 @@
     (GL30/glFramebufferTexture2D GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 GL11/GL_TEXTURE_2D texture 0)
     (println (str "glFramebufferTexture2D " (GL11/glGetError)))
     (println (str "glCheckFramebufferStatus " (GL30/glCheckFramebufferStatus GL30/GL_FRAMEBUFFER)))
-    (GL11/glClearColor 0.0 0.0 0.0 0.0)
+    (GL11/glClearColor 0.5 0.5 0.5 0.5)
     (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
     fb))
@@ -105,29 +105,13 @@
                                  "gl_Position=ftransform();"
                                  "}"
                                  ]))
-(def test2shader (into-array String [
-                                 "uniform sampler2D tex;"
-                                 "varying vec2 v_texCoord;"
-                                 "void main() {"
-                                 "gl_FragColor = texture2D(tex, v_texCoord) - vec4(0.1,0.1,0.1,0.1);"
-                                 "}"
-                                 ]))
-
-
-(def testshader (into-array String [
-                                 "uniform sampler2D tex;"
-                                 "varying vec2 v_texCoord;"
-                                 "void main() {"
-                                 "gl_FragColor = vec4(v_texCoord.x,v_texCoord.y,0.0,1.0);"
-                                 "}"
-                                 ]))
-
 
 (def rshader (into-array String [
                                  "uniform sampler2D tex;"
                                  "varying vec2 v_texCoord;"
                                  "void main() {"
-                                 "gl_FragColor = texture2D(tex, v_texCoord);"
+                                 "float r = texture2D(tex, v_texCoord);"
+                                 "gl_FragColor = vec4(r,r,r,r);"
                                  "}"
                                  ]))
 

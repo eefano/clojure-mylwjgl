@@ -4,17 +4,23 @@ uniform float du; //the width of the cells
 uniform float dv; //the height of the cells
  
 void main() {
- 
-  vec4 C = texture2D( tex, v_texCoord );
-  vec4 E = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y) );
-  vec4 N = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y + dv) );
-  vec4 W = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y) );
-  vec4 S = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y - dv) );
-  vec4 NE = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y + dv) );
-  vec4 NW = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y + dv) );
-  vec4 SE = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y - dv) );
-  vec4 SW = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y - dv) );
- 
-  gl_FragColor = N;
+
+  float off = 0.5;
+  float R = texture2D( tex, v_texCoord ).r;
+  float G = texture2D( tex, v_texCoord ).g;
+
+  float E = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y) ).r - off;
+  float N = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y + dv) ).r - off;
+  float W = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y) ).r - off;
+  float S = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y - dv) ).r - off;
+  float NE = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y + dv) ).r;
+  float NW = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y + dv) ).r;
+  float SE = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y - dv) ).r;
+  float SW = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y - dv) ).r;
+
+  
+  float X = ((N+W+S+E)/2.0 - (G-off)) * 0.995  + off;
+  
+  gl_FragColor = vec4(X,R,off,off);
 }
 
