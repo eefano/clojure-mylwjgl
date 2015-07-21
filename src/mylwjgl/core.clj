@@ -1,4 +1,5 @@
 (ns mylwjgl.core
+  (:import java.nio.ByteBuffer)
   (:import org.lwjgl.BufferUtils)
   (:import org.lwjgl.glfw.GLFW)
   (:import org.lwjgl.glfw.GLFWWindowCloseCallback)
@@ -11,7 +12,24 @@
   (:import org.lwjgl.opengl.GL12)
   (:import org.lwjgl.opengl.GL13)
   (:import org.lwjgl.opengl.GL20)
-  (:import org.lwjgl.opengl.GL30))
+  (:import org.lwjgl.opengl.GL30)
+  (:import javax.sound.sampled.AudioFormat)
+  (:import javax.sound.sampled.AudioSystem)
+  (:import javax.sound.sampled.DataLine$Info)
+  (:import javax.sound.sampled.SourceDataLine))
+
+(def SAMPLERATE 44100)
+(def BUFSIZE 2048)
+(def SMPSIZE (/ BUFSIZE 4))
+(def SHORTSIZE (/ BUFSIZE 2))
+(def BIGRATE (double 0x40000000))
+(def RATEBIG (/ 1.0 BIGRATE))
+(def RATESAMPLE (/ 1.0 SAMPLERATE))
+(def BIGSAMPLE (* BIGRATE RATESAMPLE))
+
+
+
+
 
 (defn createshader
   [source type]
@@ -166,7 +184,24 @@
       (if (and (= b GLFW/GLFW_MOUSE_BUTTON_LEFT) (= a GLFW/GLFW_RELEASE)) (reset! mousel false)))))
 
 
+
+(defn get-red
+  [texture x y]
+
+  )
+(defn put-red
+  [texture x y r]
+
+  )
+
 (defn event-loop [window w h]
+  (let [audioFormat (AudioFormat. SAMPLERATE 16 2 true true)
+        ^SourceDataLine soundLine (AudioSystem/getSourceDataLine audioFormat)
+        buzz (ByteBuffer/allocate BUFSIZE)]
+
+    (.open soundLine audioFormat BUFSIZE)
+    (.start soundLine)
+
   (.put mousec 0 1.0)
   (.put mousec 1 1.0)
   (.put mousec 2 1.0)
@@ -178,45 +213,52 @@
   (while (= (GLFW/glfwWindowShouldClose window) GL11/GL_FALSE)
     (do (GLFW/glfwPollEvents)
         (context window (fn [window]
-                          (let [flip (swap! flipper not)
-                                fb (if flip fb1 fb2)
-                                ftex (if flip tex2 tex1)
-                                rtex (if flip tex1 tex2)]
-                            (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
-                            (GL11/glViewport 0 0 w h)
-                            (GL20/glUseProgram fprogram)
-                            (time (loop [i 0] (when (< i 44100)
-                                                (runfb fb ftex drawlist)
-                                                (recur (inc i)))))
-                            (GL11/glPopAttrib)
-                            (if @mousel
-                              (let [x (quot (* (int @mousex) w) @windoww)
-                                    y (- h (quot (* (int @mousey) h) @windowh) 1)]
-                                (GL11/glBindTexture GL11/GL_TEXTURE_2D rtex)
-                                (GL11/glTexSubImage2D GL11/GL_TEXTURE_2D 0
-                                                      x y 1 1
-                                                      GL11/GL_RGBA GL11/GL_FLOAT mousec)))
-                            (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-                            (GL20/glUseProgram rprogram)
-                            (blit rtex drawlist))))
+                          (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
+                          (GL11/glViewport 0 0 w h)
+                          (GL20/glUseProgram fprogram)
+                          (.rewind buzz)
+                          (time
+                           (loop [i 0
+                                  flip false]
+                             (when (< i SMPSIZE)
+                               (runfb (if flip fb1 fb2) (if flip tex2 tex1) drawlist)
+                               (.putShort buzz i)
+                               (.putShort buzz i)
+                               (recur (inc i) (not flip)))))
+
+                          (GL11/glPopAttrib)
+                          (.write soundLine (.array buzz) 0 BUFSIZE)
+                          (if @mousel
+                            (let [x (quot (* (int @mousex) w) @windoww)
+                                  y (- h (quot (* (int @mousey) h) @windowh) 1)]
+                              (GL11/glBindTexture GL11/GL_TEXTURE_2D tex1)
+                              (GL11/glTexSubImage2D GL11/GL_TEXTURE_2D 0
+                                                    x y 1 1
+                                                    GL11/GL_RGBA GL11/GL_FLOAT mousec)))
+                          (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
+                          (GL20/glUseProgram rprogram)
+                          (blit tex1 drawlist)))
         (GLFW/glfwSwapBuffers window)))
   (println "closing")
-  (GLFW/glfwDestroyWindow window))
+  (.stop soundLine)
+  (.close soundLine)
+  (GLFW/glfwDestroyWindow window)))
 
 (defn init
   [w h]
   (let [g (GLFW/glfwInit)
         window (GLFW/glfwCreateWindow w h "Mio" 0 0)]
+ 
     (GLFW/glfwSetWindowCloseCallback window close-callback)
     (GLFW/glfwSetWindowSizeCallback window size-callback)
     (GLFW/glfwSetMouseButtonCallback window mouse-callback)
     (GLFW/glfwSetCursorPosCallback window cursor-callback)
     (GLFW/glfwSwapInterval 1)
     (context window (fn [window] (prepare window w h)))
-    ;(event-loop window w h)
-    (future (event-loop window w h))
-    window))
 
+    (event-loop window w h)
+    ;(future (event-loop window w h))
+    window))
 
 
 (defn -main
