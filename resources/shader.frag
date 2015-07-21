@@ -7,19 +7,14 @@ void main() {
 
   float off = 0.5;
   float R = texture2D( tex, v_texCoord ).r;
-  float G = texture2D( tex, v_texCoord ).g;
+  float G = texture2D( tex, v_texCoord ).g - off;
 
   float E = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y) ).r - off;
   float N = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y + dv) ).r - off;
   float W = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y) ).r - off;
   float S = texture2D( tex, vec2(v_texCoord.x, v_texCoord.y - dv) ).r - off;
-  float NE = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y + dv) ).r;
-  float NW = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y + dv) ).r;
-  float SE = texture2D( tex, vec2(v_texCoord.x + du, v_texCoord.y - dv) ).r;
-  float SW = texture2D( tex, vec2(v_texCoord.x - du, v_texCoord.y - dv) ).r;
-
   
-  float X = ((N+W+S+E)/2.0 - (G-off)) * 0.995  + off;
+  float X = ((N+W+S+E)/2.0 - G) * 0.995  + off;
   
   gl_FragColor = vec4(X,R,off,off);
 }

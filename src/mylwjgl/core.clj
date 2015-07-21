@@ -22,11 +22,16 @@
     shader))
 
 (defn createprogram
-  [vsh fsh]
+  [vsh fsh w h]
   (let [program (GL20/glCreateProgram)]
     (GL20/glAttachShader program vsh)
     (GL20/glAttachShader program fsh)
     (GL20/glLinkProgram program)
+    (GL20/glUseProgram program)
+    (GL20/glUniform1i (GL20/glGetUniformLocation program "tex") 0) 
+    (GL20/glUniform1f (GL20/glGetUniformLocation program "du") (/ 1.0 w))
+    (GL20/glUniform1f (GL20/glGetUniformLocation program "dv") (/ 1.0 h))
+    (GL20/glUseProgram 0)
     program))
 
 (defn createtexture 
@@ -57,37 +62,31 @@
     fb))
 
 
-(defn blit
-  [texture]
-  (GL11/glBindTexture GL11/GL_TEXTURE_2D texture)
-  (GL11/glColor3f 1.0 1.0 1.0)
-	(GL11/glBegin GL11/GL_QUADS)
-	(GL11/glTexCoord2f 0.0 1.0)  (GL11/glVertex2f -1.0 1.0)
-	(GL11/glTexCoord2f 0.0 0.0)  (GL11/glVertex2f -1.0 -1.0)
-	(GL11/glTexCoord2f 1.0 0.0)  (GL11/glVertex2f 1.0 -1.0)
-	(GL11/glTexCoord2f 1.0 1.0)  (GL11/glVertex2f 1.0 1.0)
-	(GL11/glEnd))
+(defn createlist
+  []
+  (let [list (GL11/glGenLists 1)]
+    (GL11/glNewList list GL11/GL_COMPILE)
+    (GL11/glBegin GL11/GL_QUADS)
+    (GL11/glColor3f 1.0 1.0 1.0)
+    (GL11/glTexCoord2f 0.0 1.0)  (GL11/glVertex2f -1.0 1.0)
+    (GL11/glTexCoord2f 0.0 0.0)  (GL11/glVertex2f -1.0 -1.0)
+    (GL11/glTexCoord2f 1.0 0.0)  (GL11/glVertex2f 1.0 -1.0)
+    (GL11/glTexCoord2f 1.0 1.0)  (GL11/glVertex2f 1.0 1.0)
+    (GL11/glEnd)
+    (GL11/glEndList)
+    list))
 
-(defn runprogram
-  [program texture w h]
-  (GL20/glUseProgram program)
-  (GL20/glUniform1i (GL20/glGetUniformLocation program "tex") 0) 
-  (GL20/glUniform1f (GL20/glGetUniformLocation program "du") (/ 1.0 w))
-  (GL20/glUniform1f (GL20/glGetUniformLocation program "dv") (/ 1.0 h))
-  (GL13/glActiveTexture GL13/GL_TEXTURE0)
-  (blit texture)
-  (GL20/glUseProgram 0)
+(defn blit
+  [texture list]
+  (GL11/glBindTexture GL11/GL_TEXTURE_2D texture)
+  (GL11/glCallList list)
   )
 
 
 (defn runfb
-  [fb program texture w h]
-  (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
+  [fb texture list]
   (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fb)
-  (GL11/glViewport 0 0 w h)
-  (runprogram program texture w h)
-  (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-  (GL11/glPopAttrib)
+  (blit texture list)
   )
 
 (defn context
@@ -115,20 +114,22 @@
                                  "}"
                                  ]))
 
-(defn reshade [window]
+(defn reshade [window w h]
   (def rprogram (createprogram (createshader vshader GL20/GL_VERTEX_SHADER)
-                               (createshader rshader GL20/GL_FRAGMENT_SHADER)))
+                               (createshader rshader GL20/GL_FRAGMENT_SHADER)
+                               w h))
   (def fprogram (createprogram (createshader vshader GL20/GL_VERTEX_SHADER)
-                               (createshader (slurp (clojure.java.io/resource "shader.frag")) GL20/GL_FRAGMENT_SHADER))))
+                               (createshader (slurp (clojure.java.io/resource "shader.frag")) GL20/GL_FRAGMENT_SHADER)
+                               w h)))
 
 (defn prepare [window w h]
  	(GL11/glEnable GL11/GL_TEXTURE_2D)
  (def tex1 (createtexture w h))
   (def tex2 (createtexture w h))
-  (reshade window)
+  (reshade window w h)
   (def fb1 (createfb tex1))
-  (def fb2 (createfb tex2)))
-
+  (def fb2 (createfb tex2))
+  (def drawlist (createlist)))
 
 (def mousec (BufferUtils/createFloatBuffer 4))
 
@@ -173,6 +174,7 @@
   (reset! windoww w)
   (reset! windowh h)
   (reset! mousel false)
+ 
   (while (= (GLFW/glfwWindowShouldClose window) GL11/GL_FALSE)
     (do (GLFW/glfwPollEvents)
         (context window (fn [window]
@@ -180,7 +182,13 @@
                                 fb (if flip fb1 fb2)
                                 ftex (if flip tex2 tex1)
                                 rtex (if flip tex1 tex2)]
-                            (runfb fb fprogram ftex w h)
+                            (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
+                            (GL11/glViewport 0 0 w h)
+                            (GL20/glUseProgram fprogram)
+                            (time (loop [i 0] (when (< i 44100)
+                                                (runfb fb ftex drawlist)
+                                                (recur (inc i)))))
+                            (GL11/glPopAttrib)
                             (if @mousel
                               (let [x (quot (* (int @mousex) w) @windoww)
                                     y (- h (quot (* (int @mousey) h) @windowh) 1)]
@@ -188,7 +196,9 @@
                                 (GL11/glTexSubImage2D GL11/GL_TEXTURE_2D 0
                                                       x y 1 1
                                                       GL11/GL_RGBA GL11/GL_FLOAT mousec)))
-                            (runprogram rprogram rtex w h))))
+                            (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
+                            (GL20/glUseProgram rprogram)
+                            (blit rtex drawlist))))
         (GLFW/glfwSwapBuffers window)))
   (println "closing")
   (GLFW/glfwDestroyWindow window))
