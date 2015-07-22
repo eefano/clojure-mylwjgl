@@ -68,13 +68,17 @@
     texture))
 
 (defn createfb
-  [texture]
+  [tex1 tex2]
   (let [fb (GL30/glGenFramebuffers)]
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fb)
-    (GL30/glFramebufferTexture2D GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 GL11/GL_TEXTURE_2D texture 0)
+    (GL30/glFramebufferTexture2D GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 GL11/GL_TEXTURE_2D tex1 0)
+    (GL30/glFramebufferTexture2D GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT1 GL11/GL_TEXTURE_2D tex2 0)
     (println (str "glFramebufferTexture2D " (GL11/glGetError)))
     (println (str "glCheckFramebufferStatus " (GL30/glCheckFramebufferStatus GL30/GL_FRAMEBUFFER)))
     (GL11/glClearColor 0.5 0.5 0.5 0.5)
+    (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT0)
+    (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
+    (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT1)
     (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
     fb))
@@ -103,9 +107,7 @@
 
 (defn runfb
   [fb texture list]
-  (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fb)
-  (blit texture list)
-  )
+ )
 
 (defn context
   [window func]
@@ -145,8 +147,7 @@
  (def tex1 (createtexture w h))
   (def tex2 (createtexture w h))
   (reshade window w h)
-  (def fb1 (createfb tex1))
-  (def fb2 (createfb tex2))
+  (def fb (createfb tex1 tex2))
   (def drawlist (createlist)))
 
 (def mousec (BufferUtils/createFloatBuffer 4))
@@ -216,12 +217,15 @@
                           (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
                           (GL11/glViewport 0 0 w h)
                           (GL20/glUseProgram fprogram)
+                          (GL30/glBindFramebuffer GL30/GL_DRAW_FRAMEBUFFER fb)
                           (.rewind buzz)
                           (time
                            (loop [i 0
                                   flip false]
                              (when (< i SMPSIZE)
-                               (runfb (if flip fb1 fb2) (if flip tex2 tex1) drawlist)
+                               (GL20/glDrawBuffers (int 
+                                (if flip GL30/GL_COLOR_ATTACHMENT0 GL30/GL_COLOR_ATTACHMENT1)))
+                                (blit (if flip tex2 tex1) drawlist)
                                (.putShort buzz i)
                                (.putShort buzz i)
                                (recur (inc i) (not flip)))))
@@ -253,7 +257,7 @@
     (GLFW/glfwSetWindowSizeCallback window size-callback)
     (GLFW/glfwSetMouseButtonCallback window mouse-callback)
     (GLFW/glfwSetCursorPosCallback window cursor-callback)
-    (GLFW/glfwSwapInterval 1)
+    (GLFW/glfwSwapInterval 0)
     (context window (fn [window] (prepare window w h)))
 
     (event-loop window w h)
