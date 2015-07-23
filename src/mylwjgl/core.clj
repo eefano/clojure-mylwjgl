@@ -1,5 +1,6 @@
 (ns mylwjgl.core
   (:import java.nio.ByteBuffer)
+  (:import java.nio.IntBuffer)
   (:import org.lwjgl.BufferUtils)
   (:import org.lwjgl.glfw.GLFW)
   (:import org.lwjgl.glfw.GLFWWindowCloseCallback)
@@ -11,7 +12,9 @@
   (:import org.lwjgl.opengl.GL11)
   (:import org.lwjgl.opengl.GL12)
   (:import org.lwjgl.opengl.GL13)
+  (:import org.lwjgl.opengl.GL15)
   (:import org.lwjgl.opengl.GL20)
+  (:import org.lwjgl.opengl.GL21)
   (:import org.lwjgl.opengl.GL30)
   (:import javax.sound.sampled.AudioFormat)
   (:import javax.sound.sampled.AudioSystem)
@@ -67,22 +70,34 @@
     (println (str "glTexImage2D " (GL11/glGetError)))
     texture))
 
+(defn createpb
+  []
+  (let [pb (GL15/glGenBuffers)]
+    (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER pb)
+    (GL15/glBufferData GL21/GL_PIXEL_PACK_BUFFER BUFSIZE GL15/GL_STREAM_READ)
+    (println (str "glBufferData " (GL11/glGetError)))
+    (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER 0)
+    pb))
+
 (defn createfb
-  [tex1 tex2]
+  [tex1 tex2 texs]
   (let [fb (GL30/glGenFramebuffers)]
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fb)
     (GL30/glFramebufferTexture2D GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT0 GL11/GL_TEXTURE_2D tex1 0)
     (GL30/glFramebufferTexture2D GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT1 GL11/GL_TEXTURE_2D tex2 0)
+    (GL30/glFramebufferTexture2D GL30/GL_FRAMEBUFFER GL30/GL_COLOR_ATTACHMENT2 GL11/GL_TEXTURE_2D texs 0)
     (println (str "glFramebufferTexture2D " (GL11/glGetError)))
     (println (str "glCheckFramebufferStatus " (GL30/glCheckFramebufferStatus GL30/GL_FRAMEBUFFER)))
-    (GL11/glClearColor 0.5 0.5 0.5 0.5)
+    (GL11/glClearColor 0.5 0.5 0.5 1.0)
     (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT0)
     (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
     (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT1)
     (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
+    (GL11/glClearColor 0.0 0.0 0.0 0.0)
+    (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT2)
+    (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
     fb))
-
 
 (defn createlist
   []
@@ -96,6 +111,28 @@
     (GL11/glTexCoord2f 1.0 1.0)  (GL11/glVertex2f 1.0 1.0)
     (GL11/glEnd)
     (GL11/glEndList)
+    list))
+
+
+(defn createminilist
+  [w h u0 v0 x y]
+  (let [list (GL11/glGenLists 1)
+        x0 (- (/ (* 2.0 x) w) 1.0)
+        y0 (- (/ (* 2.0 y) h) 1.0)
+        u1 (+ u0 (/ 1.0 w))
+        v1 (+ v0 (/ 1.0 h))
+        x1 (+ x0 (/ 2.0 w))
+        y1 (+ y0 (/ 2.0 h))]
+    (GL11/glNewList list GL11/GL_COMPILE)
+    (GL11/glBegin GL11/GL_QUADS)
+    (GL11/glColor3f 1.0 1.0 1.0)
+    (GL11/glTexCoord2f u0 v1)  (GL11/glVertex2f x0 y1)
+    (GL11/glTexCoord2f u0 v0)  (GL11/glVertex2f x0 y0)
+    (GL11/glTexCoord2f u1 v0)  (GL11/glVertex2f x1 y0)
+    (GL11/glTexCoord2f u1 v1)  (GL11/glVertex2f x1 y1)
+    (GL11/glEnd)
+    (GL11/glEndList)
+    ;(println (str "x0:" x0 " y0:" y0 " x1:" x1 " y1:" y1))
     list))
 
 (defn blit
@@ -125,32 +162,36 @@
                                  "}"
                                  ]))
 
-(def rshader (into-array String [
-                                 "uniform sampler2D tex;"
-                                 "varying vec2 v_texCoord;"
-                                 "void main() {"
-                                 "float r = texture2D(tex, v_texCoord);"
-                                 "gl_FragColor = vec4(r,r,r,r);"
-                                 "}"
-                                 ]))
-
 (defn reshade [window w h]
   (def rprogram (createprogram (createshader vshader GL20/GL_VERTEX_SHADER)
-                               (createshader rshader GL20/GL_FRAGMENT_SHADER)
+                               (createshader (slurp (clojure.java.io/resource "render.frag")) GL20/GL_FRAGMENT_SHADER)
                                w h))
   (def fprogram (createprogram (createshader vshader GL20/GL_VERTEX_SHADER)
                                (createshader (slurp (clojure.java.io/resource "shader.frag")) GL20/GL_FRAGMENT_SHADER)
+                               w h))
+  (def sprogram (createprogram (createshader vshader GL20/GL_VERTEX_SHADER)
+                               (createshader (slurp (clojure.java.io/resource "sound.frag")) GL20/GL_FRAGMENT_SHADER)
                                w h)))
 
 (defn prepare [window w h]
  	(GL11/glEnable GL11/GL_TEXTURE_2D)
- (def tex1 (createtexture w h))
+  (def tex1 (createtexture w h))
   (def tex2 (createtexture w h))
+  (def texs (createtexture w h))
   (reshade window w h)
-  (def fb (createfb tex1 tex2))
+  (def fb (createfb tex1 tex2 texs))
+  (def pb (createpb))
+  (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER pb)
+  (def minilist (IntBuffer/allocate SMPSIZE))
+  (loop [i 0]
+    (when (< i SMPSIZE)
+      (.put minilist i (createminilist w h 0.5 0.0 0 i))
+      (recur (inc i))))
+
   (def drawlist (createlist)))
 
 (def mousec (BufferUtils/createFloatBuffer 4))
+(def mappy (BufferUtils/createByteBuffer BUFSIZE))
 
 
 (def windoww (atom 0))
@@ -186,22 +227,7 @@
 
 
 
-(defn get-red
-  [texture x y]
-
-  )
-(defn put-red
-  [texture x y r]
-
-  )
-
 (defn event-loop [window w h]
-  (let [audioFormat (AudioFormat. SAMPLERATE 16 2 true true)
-        ^SourceDataLine soundLine (AudioSystem/getSourceDataLine audioFormat)
-        buzz (ByteBuffer/allocate BUFSIZE)]
-
-    (.open soundLine audioFormat BUFSIZE)
-    (.start soundLine)
 
   (.put mousec 0 1.0)
   (.put mousec 1 1.0)
@@ -210,28 +236,38 @@
   (reset! windoww w)
   (reset! windowh h)
   (reset! mousel false)
- 
+
   (while (= (GLFW/glfwWindowShouldClose window) GL11/GL_FALSE)
     (do (GLFW/glfwPollEvents)
         (context window (fn [window]
                           (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
                           (GL11/glViewport 0 0 w h)
-                          (GL20/glUseProgram fprogram)
                           (GL30/glBindFramebuffer GL30/GL_DRAW_FRAMEBUFFER fb)
-                          (.rewind buzz)
-                          (time
+                          (GL20/glUseProgram fprogram)
+                         ; (time
                            (loop [i 0
                                   flip false]
                              (when (< i SMPSIZE)
-                               (GL20/glDrawBuffers (int 
-                                (if flip GL30/GL_COLOR_ATTACHMENT0 GL30/GL_COLOR_ATTACHMENT1)))
-                                (blit (if flip tex2 tex1) drawlist)
-                               (.putShort buzz i)
-                               (.putShort buzz i)
-                               (recur (inc i) (not flip)))))
+                               (GL20/glDrawBuffers
+                                (int (if flip GL30/GL_COLOR_ATTACHMENT0 GL30/GL_COLOR_ATTACHMENT1)))
+                               (GL11/glBindTexture GL11/GL_TEXTURE_2D (if flip tex2 tex1))
+                               (GL11/glCallList drawlist)
 
+                               (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT2)
+                               (GL11/glCallList (.get minilist i))
+
+                               (recur (inc i) (not flip))))
+                          ; )
+           ;               (time
+                           (do
+                            (GL11/glReadBuffer GL30/GL_COLOR_ATTACHMENT2)
+                            (GL11/glReadPixels 20 0 1 1 GL11/GL_GREEN GL11/GL_FLOAT 0)
+                       ;     (GL15/glMapBuffer GL21/GL_PIXEL_PACK_BUFFER GL15/GL_READ_ONLY mappy)
+                       ;     (GL15/glUnmapBuffer GL21/GL_PIXEL_PACK_BUFFER)
+                            
+                            )
+                           ;)
                           (GL11/glPopAttrib)
-                          (.write soundLine (.array buzz) 0 BUFSIZE)
                           (if @mousel
                             (let [x (quot (* (int @mousex) w) @windoww)
                                   y (- h (quot (* (int @mousey) h) @windowh) 1)]
@@ -241,12 +277,16 @@
                                                     GL11/GL_RGBA GL11/GL_FLOAT mousec)))
                           (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
                           (GL20/glUseProgram rprogram)
-                          (blit tex1 drawlist)))
+                          (blit tex1 drawlist)
+                          (GL11/glBlendFunc GL11/GL_SRC_ALPHA GL11/GL_ONE_MINUS_SRC_ALPHA)
+                          (GL11/glEnable GL11/GL_BLEND)
+                          (GL20/glUseProgram sprogram)
+                          (blit texs drawlist)
+                          (GL11/glDisable GL11/GL_BLEND)
+                          ))
         (GLFW/glfwSwapBuffers window)))
   (println "closing")
-  (.stop soundLine)
-  (.close soundLine)
-  (GLFW/glfwDestroyWindow window)))
+  (GLFW/glfwDestroyWindow window))
 
 (defn init
   [w h]
