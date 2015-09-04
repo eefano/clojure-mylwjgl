@@ -2,7 +2,8 @@ varying vec2 v_texCoord;
 uniform sampler2D tex; //the input texture
 uniform float du; //the width of the cells
 uniform float dv; //the height of the cells
- 
+uniform float aflex,adamp,bflex,bdamp;
+
 void main() {
 
   float off = 0.5;
@@ -30,9 +31,9 @@ void main() {
     }
   else if(v_texCoord.y<dv || v_texCoord.y>=(1.0-dv))
     {
-      X = ((Er+Wr) * 0.502 - G) * 0.993 + off;
+      X = ((Er+Wr) * aflex - G) * adamp + off;
     }
-  else X = ((Nr+Wr+Sr+Er) * 0.5 - G) * 0.995  + off;
+  else X = ((Nr+Wr+Sr+Er) * bflex - G) * bdamp  + off;
   
   gl_FragColor = vec4(X,R,0.0,1.0);
 }

@@ -2,6 +2,12 @@
   (:import java.nio.ByteBuffer)
   (:import java.nio.IntBuffer)
   (:import org.lwjgl.BufferUtils)
+  (:import org.lwjgl.LWJGLUtil)
+  (:import org.lwjgl.openal.AL10)
+  (:import org.lwjgl.openal.ALDevice)
+  (:import org.lwjgl.openal.ALContext)
+  (:import org.lwjgl.openal.ALCapabilities)
+  (:import org.lwjgl.openal.EXTFloat32)
   (:import org.lwjgl.glfw.GLFW)
   (:import org.lwjgl.glfw.GLFWWindowCloseCallback)
   (:import org.lwjgl.glfw.GLFWWindowSizeCallback)
@@ -16,10 +22,7 @@
   (:import org.lwjgl.opengl.GL20)
   (:import org.lwjgl.opengl.GL21)
   (:import org.lwjgl.opengl.GL30)
-  (:import javax.sound.sampled.AudioFormat)
-  (:import javax.sound.sampled.AudioSystem)
-  (:import javax.sound.sampled.DataLine$Info)
-  (:import javax.sound.sampled.SourceDataLine))
+)
 
 (def SAMPLERATE 44100)
 (def BUFSIZE 2048)
@@ -42,6 +45,16 @@
     (println (GL20/glGetShaderInfoLog shader))
     shader))
 
+(defn varpars
+  [program aflex adamp bflex bdamp]
+  (GL20/glUseProgram program)
+  (GL20/glUniform1f (GL20/glGetUniformLocation program "aflex") aflex)
+  (GL20/glUniform1f (GL20/glGetUniformLocation program "adamp") adamp)
+  (GL20/glUniform1f (GL20/glGetUniformLocation program "bflex") bflex)
+  (GL20/glUniform1f (GL20/glGetUniformLocation program "bdamp") bdamp)
+  (GL20/glUseProgram 0)
+  )
+
 (defn createprogram
   [vsh fsh w h]
   (let [program (GL20/glCreateProgram)]
@@ -53,9 +66,10 @@
     (GL20/glUniform1f (GL20/glGetUniformLocation program "du") (/ 1.0 w))
     (GL20/glUniform1f (GL20/glGetUniformLocation program "dv") (/ 1.0 h))
     (GL20/glUseProgram 0)
+    (varpars program 0.51 0.995 0.5 0.995)
     program))
 
-(defn createtexture 
+(defn createtexture
   [w h]
   (let [texture (GL11/glGenTextures)]
     (GL11/glBindTexture GL11/GL_TEXTURE_2D texture)
@@ -300,9 +314,48 @@
     (GLFW/glfwSwapInterval 0)
     (context window (fn [window] (prepare window w h)))
 
-    (event-loop window w h)
-    ;(future (event-loop window w h))
+    ;(event-loop window w h)
+    (future (event-loop window w h))
     window))
+
+(defn audio []
+  (let [context (ALContext/create)
+        buffer (AL10/alGenBuffers)
+        source (AL10/alGenSources)
+        onda (BufferUtils/createByteBuffer 40000)
+        ondaf (.asFloatBuffer onda)
+        ornt (BufferUtils/createFloatBuffer 6)]
+
+    (.put ornt (float-array [0.0 0.0 -1.0 0.0 1.0 0.0]))
+    (.flip ornt)
+    (doseq [x (range 10000)] (.put ondaf (* 0.5 (Math/sin (* x 0.10)))))
+
+    (AL10/alBufferData buffer EXTFloat32/AL_FORMAT_MONO_FLOAT32 onda SAMPLERATE)
+    (println (str "alBufferData " (AL10/alGetError)))
+
+    (AL10/alSourcei source AL10/AL_BUFFER buffer)
+    (AL10/alSourcei source AL10/AL_LOOPING AL10/AL_TRUE)
+
+    (AL10/alSourcef source AL10/AL_PITCH 1.0)
+    (AL10/alSourcef source AL10/AL_GAIN 1.0)
+    (AL10/alSource3f source AL10/AL_POSITION 0.0 0.0 0.0)
+    (AL10/alSource3f source AL10/AL_VELOCITY 0.0 0.0 0.0)
+    (AL10/alListener3f AL10/AL_POSITION 0.0 0.0 0.0)
+    (AL10/alListener3f AL10/AL_VELOCITY 0.0 0.0 0.0)
+    (AL10/alListenerfv AL10/AL_ORIENTATION ornt)
+
+;    (AL10/alSourceQueueBuffers source buffer)
+    (AL10/alSourcePlay source)
+    (println (str "alSourcePlay " (AL10/alGetError)))
+
+;    (doseq [x (range 10)]
+;      (AL10/alSourceQueueBuffers source buffer)
+;      (println (str x "alSourceQueueBuffers" (AL10/alGetError))))
+
+
+    context))
+
+;(context window (fn [window] (varpars fprogram 0.50 0.996093 0.50 0.9986))) 
 
 
 (defn -main
