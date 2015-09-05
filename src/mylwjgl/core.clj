@@ -320,40 +320,58 @@
 
 (defn audio []
   (let [context (ALContext/create)
-        buffer (AL10/alGenBuffers)
-        source (AL10/alGenSources)
-        onda (BufferUtils/createByteBuffer 40000)
-        ondaf (.asFloatBuffer onda)
         ornt (BufferUtils/createFloatBuffer 6)]
 
     (.put ornt (float-array [0.0 0.0 -1.0 0.0 1.0 0.0]))
     (.flip ornt)
-    (doseq [x (range 10000)] (.put ondaf (* 0.5 (Math/sin (* x 0.10)))))
 
-    (AL10/alBufferData buffer EXTFloat32/AL_FORMAT_MONO_FLOAT32 onda SAMPLERATE)
-    (println (str "alBufferData " (AL10/alGetError)))
+    (AL10/alListener3f AL10/AL_POSITION 0.0 0.0 0.0)
+    (AL10/alListener3f AL10/AL_VELOCITY 0.0 0.0 0.0)
+    (AL10/alListenerfv AL10/AL_ORIENTATION ornt)
+    context))
 
-    (AL10/alSourcei source AL10/AL_BUFFER buffer)
-    (AL10/alSourcei source AL10/AL_LOOPING AL10/AL_TRUE)
+(defn stream []
+  (let [
+        buffers (BufferUtils/createIntBuffer 2)
+        source (AL10/alGenSources)
+        onda (BufferUtils/createByteBuffer 40000)
+        ondaf (.asFloatBuffer onda)
+        ]
 
     (AL10/alSourcef source AL10/AL_PITCH 1.0)
     (AL10/alSourcef source AL10/AL_GAIN 1.0)
     (AL10/alSource3f source AL10/AL_POSITION 0.0 0.0 0.0)
     (AL10/alSource3f source AL10/AL_VELOCITY 0.0 0.0 0.0)
-    (AL10/alListener3f AL10/AL_POSITION 0.0 0.0 0.0)
-    (AL10/alListener3f AL10/AL_VELOCITY 0.0 0.0 0.0)
-    (AL10/alListenerfv AL10/AL_ORIENTATION ornt)
-
-;    (AL10/alSourceQueueBuffers source buffer)
-    (AL10/alSourcePlay source)
-    (println (str "alSourcePlay " (AL10/alGetError)))
-
-;    (doseq [x (range 10)]
-;      (AL10/alSourceQueueBuffers source buffer)
-;      (println (str x "alSourceQueueBuffers" (AL10/alGetError))))
 
 
-    context))
+    (AL10/alGenBuffers buffers)
+
+
+    (doseq [x (range 10)]
+      (let [b (.get buffers (mod x 2))]
+
+        (if (= AL10/AL_PLAYING (AL10/alGetSourcei source AL10/AL_SOURCE_STATE))
+          (while (= 0 (AL10/alGetSourcei source AL10/AL_BUFFERS_PROCESSED))))
+
+        (AL10/alSourceUnqueueBuffers source)
+        (doseq [i (range 10000)] (.put ondaf (* 0.5 (Math/sin (* i (+ 0.10 (* x 0.01)))))))
+        (.flip ondaf)
+
+        (AL10/alBufferData b EXTFloat32/AL_FORMAT_MONO_FLOAT32 onda SAMPLERATE)
+        (AL10/alSourceQueueBuffers source b)
+
+        (if-not (= AL10/AL_PLAYING (AL10/alGetSourcei source AL10/AL_SOURCE_STATE))
+          (if (= 2 (AL10/alGetSourcei source AL10/AL_BUFFERS_QUEUED))
+            (AL10/alSourcePlay source)))
+
+        (println (str " seq " x
+                      " queued " (AL10/alGetSourcei source AL10/AL_BUFFERS_QUEUED)
+                      " processed " (AL10/alGetSourcei source AL10/AL_BUFFERS_PROCESSED)
+                      ))
+
+        ))
+
+   ))
 
 ;(context window (fn [window] (varpars fprogram 0.50 0.996093 0.50 0.9986))) 
 
