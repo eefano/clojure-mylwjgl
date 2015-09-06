@@ -2,7 +2,6 @@
   (:import java.nio.ByteBuffer)
   (:import java.nio.IntBuffer)
   (:import org.lwjgl.BufferUtils)
-  (:import org.lwjgl.LWJGLUtil)
   (:import org.lwjgl.openal.AL10)
   (:import org.lwjgl.openal.ALDevice)
   (:import org.lwjgl.openal.ALContext)
@@ -25,17 +24,8 @@
 )
 
 (def SAMPLERATE 44100)
-(def BUFSIZE 2048)
-(def SMPSIZE (/ BUFSIZE 4))
-(def SHORTSIZE (/ BUFSIZE 2))
-(def BIGRATE (double 0x40000000))
-(def RATEBIG (/ 1.0 BIGRATE))
-(def RATESAMPLE (/ 1.0 SAMPLERATE))
-(def BIGSAMPLE (* BIGRATE RATESAMPLE))
-
-
-
-
+(def BUFSIZE 8192)
+(def SMPSIZE 2048)
 
 (defn createshader
   [source type]
@@ -88,7 +78,7 @@
   []
   (let [pb (GL15/glGenBuffers)]
     (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER pb)
-    (GL15/glBufferData GL21/GL_PIXEL_PACK_BUFFER BUFSIZE GL15/GL_STREAM_READ)
+    (GL15/glBufferData GL21/GL_PIXEL_PACK_BUFFER BUFSIZE GL15/GL_DYNAMIC_READ)
     (println (str "glBufferData " (GL11/glGetError)))
     (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER 0)
     pb))
@@ -107,7 +97,7 @@
     (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
     (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT1)
     (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
-    (GL11/glClearColor 0.0 0.0 0.0 0.0)
+    (GL11/glClearColor 0.25 0.0 0.0 0.0)
     (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT2)
     (GL11/glClear GL11/GL_COLOR_BUFFER_BIT)
     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
@@ -129,10 +119,10 @@
 
 
 (defn createminilist
-  [w h u0 v0 x y]
-  (let [list (GL11/glGenLists 1)
-        x0 (- (/ (* 2.0 x) w) 1.0)
-        y0 (- (/ (* 2.0 y) h) 1.0)
+  [w h i u0 v0]
+  (let [list (GL11/glGenLists 1) 
+        x0 (- (* 2.0 (/ (mod i w) w)) 1.0) 
+        y0 (- (* 2.0 (/ (quot i w) h)) 1.0)
         u1 (+ u0 (/ 1.0 w))
         v1 (+ v0 (/ 1.0 h))
         x1 (+ x0 (/ 2.0 w))
@@ -195,25 +185,22 @@
   (reshade window w h)
   (def fb (createfb tex1 tex2 texs))
   (def pb (createpb))
-  (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER pb)
   (def minilist (IntBuffer/allocate SMPSIZE))
   (loop [i 0]
     (when (< i SMPSIZE)
-      (.put minilist i (createminilist w h 0.5 0.0 0 i))
+      (.put minilist i (createminilist w h i 0.5 0.0))
       (recur (inc i))))
 
   (def drawlist (createlist)))
 
 (def mousec (BufferUtils/createFloatBuffer 4))
-(def mappy (BufferUtils/createByteBuffer BUFSIZE))
-
 
 (def windoww (atom 0))
 (def windowh (atom 0))
 (def mousex (atom 0.0))
 (def mousey (atom 0.0))
 (def mousel (atom false))
-(def flipper (atom false))
+(def flipper (atom 0))
 
 ;IMPORTANT CALLBACKS MUST BE DEFINED STATIC TO AVOID GARBAGE COLLECTING THEM
 (def close-callback
@@ -240,67 +227,121 @@
       (if (and (= b GLFW/GLFW_MOUSE_BUTTON_LEFT) (= a GLFW/GLFW_RELEASE)) (reset! mousel false)))))
 
 
-
 (defn event-loop [window w h]
+  (let [alcontext (ALContext/create)
+        ornt (BufferUtils/createFloatBuffer 6)
+        buffers (BufferUtils/createIntBuffer 2)
+        source (AL10/alGenSources)
+        ]
 
-  (.put mousec 0 1.0)
-  (.put mousec 1 1.0)
-  (.put mousec 2 1.0)
-  (.put mousec 3 1.0)
-  (reset! windoww w)
-  (reset! windowh h)
-  (reset! mousel false)
+    (.put mousec 0 1.0)
+    (.put mousec 1 1.0)
+    (.put mousec 2 1.0)
+    (.put mousec 3 1.0)
+    (reset! windoww w)
+    (reset! windowh h)
+    (reset! mousel false)
 
-  (while (= (GLFW/glfwWindowShouldClose window) GL11/GL_FALSE)
-    (do (GLFW/glfwPollEvents)
-        (context window (fn [window]
-                          (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
-                          (GL11/glViewport 0 0 w h)
-                          (GL30/glBindFramebuffer GL30/GL_DRAW_FRAMEBUFFER fb)
-                          (GL20/glUseProgram fprogram)
-                         ; (time
-                           (loop [i 0
-                                  flip false]
-                             (when (< i SMPSIZE)
-                               (GL20/glDrawBuffers
-                                (int (if flip GL30/GL_COLOR_ATTACHMENT0 GL30/GL_COLOR_ATTACHMENT1)))
-                               (GL11/glBindTexture GL11/GL_TEXTURE_2D (if flip tex2 tex1))
-                               (GL11/glCallList drawlist)
+    (.put ornt (float-array [0.0 0.0 -1.0 0.0 1.0 0.0]))
+    (.flip ornt)
 
-                               (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT2)
-                               (GL11/glCallList (.get minilist i))
+    (AL10/alListener3f AL10/AL_POSITION 0.0 0.0 0.0)
+    (AL10/alListener3f AL10/AL_VELOCITY 0.0 0.0 0.0)
+    (AL10/alListenerfv AL10/AL_ORIENTATION ornt)
+ 
+    (AL10/alSourcef source AL10/AL_PITCH 1.0)
+    (AL10/alSourcef source AL10/AL_GAIN 1.0)
+    (AL10/alSource3f source AL10/AL_POSITION 0.0 0.0 0.0)
+    (AL10/alSource3f source AL10/AL_VELOCITY 0.0 0.0 0.0)
 
-                               (recur (inc i) (not flip))))
-                          ; )
-           ;               (time
-                           (do
-                            (GL11/glReadBuffer GL30/GL_COLOR_ATTACHMENT2)
-                            (GL11/glReadPixels 20 0 1 1 GL11/GL_GREEN GL11/GL_FLOAT 0)
-                       ;     (GL15/glMapBuffer GL21/GL_PIXEL_PACK_BUFFER GL15/GL_READ_ONLY mappy)
-                       ;     (GL15/glUnmapBuffer GL21/GL_PIXEL_PACK_BUFFER)
-                            
-                            )
-                           ;)
-                          (GL11/glPopAttrib)
-                          (if @mousel
+    (AL10/alGenBuffers buffers)
+
+    (while (= (GLFW/glfwWindowShouldClose window) GL11/GL_FALSE)
+      (do
+        (let [b (.get buffers (swap! flipper (fn [x] (bit-xor x 1))))]
+
+          (if (= AL10/AL_PLAYING (AL10/alGetSourcei source AL10/AL_SOURCE_STATE))
+            (while (= 0 (AL10/alGetSourcei source AL10/AL_BUFFERS_PROCESSED))))
+
+          (AL10/alSourceUnqueueBuffers source)
+
+          (context window
+                   (fn [window]
+                     (GL11/glPushAttrib GL11/GL_VIEWPORT_BIT)
+                     (GL11/glViewport 0 0 w h)
+                     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fb)
+                     (GL20/glUseProgram fprogram)
+                     (time
+                     (loop [i 0
+                            flip false]
+                       (when (< i SMPSIZE)
+                         (GL20/glDrawBuffers
+                          (int (if flip GL30/GL_COLOR_ATTACHMENT0 GL30/GL_COLOR_ATTACHMENT1)))
+                         (GL11/glReadBuffer
+                          (int (if flip GL30/GL_COLOR_ATTACHMENT1 GL30/GL_COLOR_ATTACHMENT0)))
+
+                         (GL11/glBindTexture GL11/GL_TEXTURE_2D (if flip tex2 tex1))
+                         (GL11/glCallList drawlist)
+
+                        (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT2)
+                        (GL11/glCallList (.get minilist i))
+
+                         (recur (inc i) (not flip))))
+                     )
+                   ;  (time (do
+                     (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER pb)
+                     (GL11/glReadBuffer GL30/GL_COLOR_ATTACHMENT2)
+                     (GL11/glReadPixels 0 0 256 8 GL11/GL_RED GL11/GL_FLOAT 0)
+                     (let [mappy (GL15/glMapBuffer GL21/GL_PIXEL_PACK_BUFFER GL15/GL_READ_ONLY)]
+                       (AL10/alBufferData b EXTFloat32/AL_FORMAT_MONO_FLOAT32 mappy SAMPLERATE))
+                     (GL15/glUnmapBuffer GL21/GL_PIXEL_PACK_BUFFER)
+                     (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER 0)
+                     (GL11/glReadBuffer GL11/GL_FRONT)
+                    ; ))
+                     (GL11/glPopAttrib)
+                     (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
+                     ))
+
+          (AL10/alSourceQueueBuffers source b)
+
+          (if-not (= AL10/AL_PLAYING (AL10/alGetSourcei source AL10/AL_SOURCE_STATE))
+            (if (= 2 (AL10/alGetSourcei source AL10/AL_BUFFERS_QUEUED))
+              (AL10/alSourcePlay source)))
+
+
+          (GLFW/glfwPollEvents)
+          (context window
+                   (fn [window]
+                     (if @mousel
                             (let [x (quot (* (int @mousex) w) @windoww)
                                   y (- h (quot (* (int @mousey) h) @windowh) 1)]
                               (GL11/glBindTexture GL11/GL_TEXTURE_2D tex1)
                               (GL11/glTexSubImage2D GL11/GL_TEXTURE_2D 0
                                                     x y 1 1
                                                     GL11/GL_RGBA GL11/GL_FLOAT mousec)))
-                          (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
-                          (GL20/glUseProgram rprogram)
-                          (blit tex1 drawlist)
-                          (GL11/glBlendFunc GL11/GL_SRC_ALPHA GL11/GL_ONE_MINUS_SRC_ALPHA)
-                          (GL11/glEnable GL11/GL_BLEND)
-                          (GL20/glUseProgram sprogram)
-                          (blit texs drawlist)
-                          (GL11/glDisable GL11/GL_BLEND)
+                     (GL20/glUseProgram rprogram)
+                     (blit texs drawlist)
+                          ;(GL11/glBlendFunc GL11/GL_SRC_ALPHA GL11/GL_ONE_MINUS_SRC_ALPHA)
+                          ;(GL11/glEnable GL11/GL_BLEND)
+                          ;(GL20/glUseProgram rprogram)
+                          ;(blit texs drawlist)
+                          ;(GL11/glDisable GL11/GL_BLEND)
                           ))
-        (GLFW/glfwSwapBuffers window)))
+
+
+          (GLFW/glfwSwapBuffers window)
+
+          (println (str " seq " @flipper
+                        " queued " (AL10/alGetSourcei source AL10/AL_BUFFERS_QUEUED)
+                        " processed " (AL10/alGetSourcei source AL10/AL_BUFFERS_PROCESSED)
+                        ))
+       )))
   (println "closing")
-  (GLFW/glfwDestroyWindow window))
+  (.destroy alcontext)
+  (GLFW/glfwDestroyWindow window)
+  ))
+
+
 
 (defn init
   [w h]
@@ -318,60 +359,6 @@
     (future (event-loop window w h))
     window))
 
-(defn audio []
-  (let [context (ALContext/create)
-        ornt (BufferUtils/createFloatBuffer 6)]
-
-    (.put ornt (float-array [0.0 0.0 -1.0 0.0 1.0 0.0]))
-    (.flip ornt)
-
-    (AL10/alListener3f AL10/AL_POSITION 0.0 0.0 0.0)
-    (AL10/alListener3f AL10/AL_VELOCITY 0.0 0.0 0.0)
-    (AL10/alListenerfv AL10/AL_ORIENTATION ornt)
-    context))
-
-(defn stream []
-  (let [
-        buffers (BufferUtils/createIntBuffer 2)
-        source (AL10/alGenSources)
-        onda (BufferUtils/createByteBuffer 40000)
-        ondaf (.asFloatBuffer onda)
-        ]
-
-    (AL10/alSourcef source AL10/AL_PITCH 1.0)
-    (AL10/alSourcef source AL10/AL_GAIN 1.0)
-    (AL10/alSource3f source AL10/AL_POSITION 0.0 0.0 0.0)
-    (AL10/alSource3f source AL10/AL_VELOCITY 0.0 0.0 0.0)
-
-
-    (AL10/alGenBuffers buffers)
-
-
-    (doseq [x (range 10)]
-      (let [b (.get buffers (mod x 2))]
-
-        (if (= AL10/AL_PLAYING (AL10/alGetSourcei source AL10/AL_SOURCE_STATE))
-          (while (= 0 (AL10/alGetSourcei source AL10/AL_BUFFERS_PROCESSED))))
-
-        (AL10/alSourceUnqueueBuffers source)
-        (doseq [i (range 10000)] (.put ondaf (* 0.5 (Math/sin (* i (+ 0.10 (* x 0.01)))))))
-        (.flip ondaf)
-
-        (AL10/alBufferData b EXTFloat32/AL_FORMAT_MONO_FLOAT32 onda SAMPLERATE)
-        (AL10/alSourceQueueBuffers source b)
-
-        (if-not (= AL10/AL_PLAYING (AL10/alGetSourcei source AL10/AL_SOURCE_STATE))
-          (if (= 2 (AL10/alGetSourcei source AL10/AL_BUFFERS_QUEUED))
-            (AL10/alSourcePlay source)))
-
-        (println (str " seq " x
-                      " queued " (AL10/alGetSourcei source AL10/AL_BUFFERS_QUEUED)
-                      " processed " (AL10/alGetSourcei source AL10/AL_BUFFERS_PROCESSED)
-                      ))
-
-        ))
-
-   ))
 
 ;(context window (fn [window] (varpars fprogram 0.50 0.996093 0.50 0.9986))) 
 
