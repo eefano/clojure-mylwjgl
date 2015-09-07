@@ -24,8 +24,8 @@
 )
 
 (def SAMPLERATE 44100)
-(def BUFSIZE 8192)
-(def SMPSIZE 2048)
+(def BUFSIZE 16384)
+(def SMPSIZE 4096) 
 
 (defn createshader
   [source type]
@@ -271,33 +271,29 @@
                      (GL11/glViewport 0 0 w h)
                      (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER fb)
                      (GL20/glUseProgram fprogram)
-                     (time
+                     (time (do
                      (loop [i 0
                             flip false]
                        (when (< i SMPSIZE)
                          (GL20/glDrawBuffers
                           (int (if flip GL30/GL_COLOR_ATTACHMENT0 GL30/GL_COLOR_ATTACHMENT1)))
-                         (GL11/glReadBuffer
-                          (int (if flip GL30/GL_COLOR_ATTACHMENT1 GL30/GL_COLOR_ATTACHMENT0)))
 
-                         (GL11/glBindTexture GL11/GL_TEXTURE_2D (if flip tex2 tex1))
-                         (GL11/glCallList drawlist)
+                          (GL11/glBindTexture GL11/GL_TEXTURE_2D (if flip tex2 tex1))
+                          (GL11/glCallList drawlist)
 
                         (GL20/glDrawBuffers GL30/GL_COLOR_ATTACHMENT2)
                         (GL11/glCallList (.get minilist i))
 
                          (recur (inc i) (not flip))))
-                     )
-                   ;  (time (do
                      (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER pb)
                      (GL11/glReadBuffer GL30/GL_COLOR_ATTACHMENT2)
-                     (GL11/glReadPixels 0 0 256 8 GL11/GL_RED GL11/GL_FLOAT 0)
+                     (GL11/glReadPixels 0 0 256 16 GL11/GL_RED GL11/GL_FLOAT 0)
                      (let [mappy (GL15/glMapBuffer GL21/GL_PIXEL_PACK_BUFFER GL15/GL_READ_ONLY)]
                        (AL10/alBufferData b EXTFloat32/AL_FORMAT_MONO_FLOAT32 mappy SAMPLERATE))
                      (GL15/glUnmapBuffer GL21/GL_PIXEL_PACK_BUFFER)
                      (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER 0)
                      (GL11/glReadBuffer GL11/GL_FRONT)
-                    ; ))
+                     ))
                      (GL11/glPopAttrib)
                      (GL30/glBindFramebuffer GL30/GL_FRAMEBUFFER 0)
                      ))

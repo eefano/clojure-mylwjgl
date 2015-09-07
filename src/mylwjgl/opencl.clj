@@ -41,15 +41,15 @@
 (defn initializecl []
   (let [cld (CL/destroy)
         clc (CL/create)
-        platforms (BufferUtils/createByteBuffer 4)
+        platforms (BufferUtils/createByteBuffer 8)
         ids (CL10/clGetPlatformIDs 1 platforms nil)
-        platform (.getInt platforms 0)
-        devices (BufferUtils/createByteBuffer 4)
-        did (CL10/clGetDeviceIDs platform CL10/CL_DEVICE_TYPE_CPU 1 devices nil)
-        device (.getInt devices 0)
-        properties (doto (BufferUtils/createByteBuffer 12)
-                     (.putInt 0 CL10/CL_CONTEXT_PLATFORM)
-                     (.putInt 4 platform)
+        platform (.getLong platforms 0)
+        devices (BufferUtils/createByteBuffer 8)
+        did (CL10/clGetDeviceIDs platform CL10/CL_DEVICE_TYPE_GPU 1 devices nil)
+        device (.getLong devices 0)
+        properties (doto (BufferUtils/createByteBuffer 24)
+                     (.putLong 0 CL10/CL_CONTEXT_PLATFORM)
+                     (.putLong 8 platform)
                      (.rewind))
         ret (BufferUtils/createByteBuffer 4)
         context (CL10/clCreateContext properties 1 devices nil 0 ret)
@@ -81,16 +81,41 @@
     {:program program :kernel kernel})
   )
 
-(defn allocl [env nio]
+(defn allocl [env nio flg]
   (let [
         ret (BufferUtils/createByteBuffer 4)
         ctx ^Long (:context env)
-        flg ^Long (CL10/CL_MEM_COPY_HOST_PTR)
-        buffer (CL10/clCreateBuffer ctx flg nio (.asIntBuffer ret))
+        lflg (long flg)
+        buffer (CL10/clCreateBuffer ctx lflg nio (.asIntBuffer ret))
         rt1 (.get (.asIntBuffer ret) 0)
         ]
     (println (str "clCreateBuffer " (CLUtil/getErrcodeName rt1)))
     buffer)
+  )
+
+
+(defn testcl [env pgm n]
+  (let [
+        k (:kernel pgm)
+        size (* n 4)
+        f1 (doto (BufferUtils/createFloatBuffer n)
+             (.put (float-array (range n)))
+             (.rewind))
+        f3 (BufferUtils/createFloatBuffer n)
+        b1 (allocl env f1 CL10/CL_MEM_COPY_HOST_PTR)
+        b2 (allocl env f1 CL10/CL_MEM_COPY_HOST_PTR)
+        b3 (allocl env size CL10/CL_MEM_READ_ONLY)
+        bn (doto (BufferUtils/createByteBuffer 8)
+             (.putLong 0 n)
+             (.rewind))
+        ]
+        (println (CL10/clSetKernelArg1l k 0 b1))
+        (println (CL10/clSetKernelArg1l k 1 b2))
+        (println (CL10/clSetKernelArg1l k 2 b3))
+        (println (CL10/clSetKernelArg1i k 3 n))
+        (println (CL10/clEnqueueNDRangeKernel (:queue env) k 1 nil bn nil 0 nil nil))
+        (println (CL10/clEnqueueReadBuffer (:queue env) b3 CL10/CL_FALSE 0 f3 nil nil))
+        (doseq [x (range n)] (println (.get f3 x))))
   )
 
 (defn createshader

@@ -20,20 +20,7 @@ void main() {
   float Wr = W.r - off;
   float Sr = S.r - off;
 
-  float X;
-  if(v_texCoord.x<du)
-    {
-      X = off;
-    }
-  else if(v_texCoord.x>=(1.0-du))
-    {
-      X = off;
-    }
-  else if(v_texCoord.y<dv || v_texCoord.y>=(1.0-dv))
-    {
-      X = ((Er+Wr) * aflex - G) * adamp + off;
-    }
-  else X = ((Nr+Wr+Sr+Er) * bflex - G) * bdamp  + off;
+  float X = ((Nr+Wr+Sr+Er) * bflex - G) * bdamp  + off;
   
   gl_FragColor = vec4(X,R,0.0,1.0);
 }
