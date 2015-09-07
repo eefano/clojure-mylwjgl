@@ -7,6 +7,7 @@
                  [org.clojure/clojure "1.6.0"]
                  [org.lwjgl/lwjgl "3.0.0a"]
                  [org.lwjgl/lwjgl-platform "3.0.0a" :classifier "natives-linux" :native-prefix ""]
+                 [org.lwjgl/lwjgl-platform "3.0.0a" :classifier "natives-windows" :native-prefix ""]
                  ]
   :main ^:skip-aot mylwjgl.core
   :target-path "target/%s"
