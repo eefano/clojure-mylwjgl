@@ -24,13 +24,8 @@
 )
 
 (def SAMPLERATE 44100)
-(def BUFSIZE 2048)
+(def BUFSIZE 4192)
 (def SMPSIZE (/ BUFSIZE 4))
-(def SHORTSIZE (/ BUFSIZE 2))
-(def BIGRATE (double 0x40000000))
-(def RATEBIG (/ 1.0 BIGRATE))
-(def RATESAMPLE (/ 1.0 SAMPLERATE))
-(def BIGSAMPLE (* BIGRATE RATESAMPLE))
 
 
 (defn initializecl []
@@ -125,6 +120,8 @@
     (doseq [x (range n)] (println (str (.get f1 x) " " (.get f1 x) " " (.get f3 x)))))
   )
 
+
+
 (defn createtexture
   [w h]
   (let [texture (GL11/glGenTextures)]
@@ -177,7 +174,7 @@
   (def mousex (atom 0.0))
   (def mousey (atom 0.0))
   (def mousel (atom false))
-  (def flipper (atom false))
+  (def flipper (atom 1))
   )
 
 
@@ -206,6 +203,95 @@
       (if (and (= b GLFW/GLFW_MOUSE_BUTTON_LEFT) (= a GLFW/GLFW_RELEASE)) (reset! mousel false)))))
 
 
+(defn sound-loop [window w h]
+  (let [env (initializecl)
+        pgm (loadcl env)
+        alcontext (ALContext/create)
+        ornt (BufferUtils/createFloatBuffer 6)
+        buffers (BufferUtils/createIntBuffer 3)
+        source (AL10/alGenSources)
+        mappy (BufferUtils/createByteBuffer BUFSIZE)
+        mappyf (.asFloatBuffer mappy)
+
+        k (:kernel pgm)
+        q (:queue env)
+        n (* w h)
+        size (* n 4)
+        f1 (doto (BufferUtils/createFloatBuffer n)
+             (.put (float-array (range n)))
+             (.rewind))
+        f3 (BufferUtils/createFloatBuffer n)
+        b1 (allocl env f1 CL10/CL_MEM_COPY_HOST_PTR)
+        b2 (allocl env f1 CL10/CL_MEM_COPY_HOST_PTR)
+        b3 (allocl env f1 CL10/CL_MEM_COPY_HOST_PTR)
+        pb (BufferUtils/createPointerBuffer 1)
+        ]
+
+    (print (CL10/clSetKernelArg1i k 0 w) " ")
+    (print (CL10/clSetKernelArg1i k 1 h) " ")
+    (.put pb b1)
+    (.rewind pb)
+    (print (CL10/clSetKernelArg k 2 pb) " ")
+    (.put pb b2)
+    (.rewind pb)
+    (CL10/clSetKernelArg k 3 pb)
+    (.put pb b3)
+    (.rewind pb)
+    (CL10/clSetKernelArg k 4 pb)
+
+    (.put pb n)
+    (.rewind pb)
+ 
+
+
+    (.put ornt (float-array [0.0 0.0 -1.0 0.0 1.0 0.0]))
+    (.flip ornt)
+
+    (AL10/alListener3f AL10/AL_POSITION 0.0 0.0 0.0)
+    (AL10/alListener3f AL10/AL_VELOCITY 0.0 0.0 0.0)
+    (AL10/alListenerfv AL10/AL_ORIENTATION ornt)
+ 
+    (AL10/alSourcef source AL10/AL_PITCH 1.0)
+    (AL10/alSourcef source AL10/AL_GAIN 1.0)
+    (AL10/alSource3f source AL10/AL_POSITION 0.0 0.0 0.0)
+    (AL10/alSource3f source AL10/AL_VELOCITY 0.0 0.0 0.0)
+
+    (AL10/alGenBuffers buffers)
+
+    (doseq [x (range 3)]
+      (AL10/alBufferData (.get buffers x) EXTFloat32/AL_FORMAT_MONO_FLOAT32 mappy SAMPLERATE))
+
+    (AL10/alSourceQueueBuffers source buffers)
+    (AL10/alSourcePlay source)
+
+    (while (= (GLFW/glfwWindowShouldClose window) GL11/GL_FALSE)
+      (do
+        (while (> (AL10/alGetSourcei source AL10/AL_BUFFERS_PROCESSED) 0)
+          (let [
+                b (AL10/alSourceUnqueueBuffers source)
+                ]
+(time
+            (loop [i 0]
+              (when (< i SMPSIZE)
+               (CL10/clEnqueueNDRangeKernel q k 1 nil pb nil nil nil)
+               (CL10/clFinish q)
+                (.put mappyf i 1.0)
+                (recur (inc i))))
+)
+           (AL10/alBufferData b EXTFloat32/AL_FORMAT_MONO_FLOAT32 mappy SAMPLERATE)
+            (AL10/alSourceQueueBuffers source b)
+
+            (if-not (= AL10/AL_PLAYING (AL10/alGetSourcei source AL10/AL_SOURCE_STATE))
+              (AL10/alSourcePlay source))
+
+            (println (str " buffer " b
+                        ))
+            ))))
+  (println "closing audio")
+  (.destroy alcontext)
+  ))
+
+
 
 (defn event-loop [window w h]
 
@@ -230,7 +316,7 @@
                           (blit tex1 drawlist)
                           ))
         (GLFW/glfwSwapBuffers window)))
-  (println "closing")
+  (println "closing window")
   (GLFW/glfwDestroyWindow window))
 
 (defn init
@@ -242,11 +328,12 @@
     (GLFW/glfwSetWindowSizeCallback window size-callback)
     (GLFW/glfwSetMouseButtonCallback window mouse-callback)
     (GLFW/glfwSetCursorPosCallback window cursor-callback)
-    (GLFW/glfwSwapInterval 0)
+    (GLFW/glfwSwapInterval 2)
     (context window (fn [window] (prepare window w h)))
 
-    (event-loop window w h)
-    ;(future (event-loop window w h))
+    ;(event-loop window w h)
+    (future (event-loop window w h))
+    (future (sound-loop window w h))
     window))
 
 (defn -main
